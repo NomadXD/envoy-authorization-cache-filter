@@ -43,24 +43,27 @@ static_resources:
               type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
               value:
                 config:
-                  name: "my_plugin"
-                  root_id: "my_root_id"
-                  configuration: |
-                   {
-                     "management_service_cluster": "management-service",
-                     "ext_authz_service_path": "/auth",
-                     "cache_service_path": "/cache"
-                     "cache_update_duration": "10s"
-                     "ext_authz_authority": "ext_authz"
-                     "cache_service_authority": "cache"
-                   }
+                  name: "cache_filter"
+                  root_id: "cache_filter"
+                  configuration: 
+                    "@type": type.googleapis.com/google.protobuf.StringValue
+                    value: |
+                      {
+                        "management_service_cluster": "management-service",
+                        "ext_authz_service_path": "/auth",
+                        "cache_service_path": "/cache",
+                        "cache_update_duration": "10s",
+                        "ext_authz_authority": "ext_authz",
+                        "cache_service_authority": "cache"
+                      }
                   vm_config:
                     runtime: "envoy.wasm.runtime.v8"
                     vm_id: "my_vm_id"
                     code:
                       local:
-                        filename: "cache_filter.wasm"
+                        filename: "/usr/local/bin/cache_filter.wasm"
                     configuration: {}
+                    allow_precompiled: true
           - name: envoy.filters.http.router
             typed_config: {}
   clusters:

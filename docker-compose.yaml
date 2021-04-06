@@ -11,8 +11,8 @@ services:
     ports:
       - "9095:9095"
       - "9000:9000"
-    volumes:
-      - ".envoy/cache_filter.wasm:/usr/local/bin/cache_filter.wasm" 
+    # volumes:
+    #   - ".envoy/cache_filter.wasm:/etc/envoy/cache_filter.wasm" 
 
   backend_service:
     build:

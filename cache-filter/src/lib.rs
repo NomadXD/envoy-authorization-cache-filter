@@ -6,24 +6,21 @@ use proxy_wasm::{
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use std::{cell::RefCell, collections::HashMap, error::Error, time::Duration};
+use std::{borrow::Borrow, cell::RefCell, collections::HashMap, error::Error, time::Duration};
 
 const CACHE_KEY: &str = "cache";
 const INITIALISATION_TICK: Duration = Duration::from_secs(3);
+const POWERED_BY: &str = "cache-filter";
 
 #[derive(Deserialize, Debug)]
 #[serde(default)]
 struct FilterConfig {
     /// Envoy cluster name that provides ext_authz service. Should provide the cluster
     /// name of the ext_authz cluster in the envoy.yaml file.
-    ext_authz_cluster: String,
+    management_service_cluster: String,
 
     /// The path to call on the HTTP service for ext_authz
-    auth_service_path: String,
-
-    /// Envoy cluster name that provides cache service. Should provide the cluster
-    /// name of the cache cluster in the envoy.yaml file.
-    cache_service_cluster: String,
+    ext_authz_service_path: String,
 
     /// The path to call on the HTTP service for cache
     cache_service_path: String,
@@ -42,9 +39,8 @@ struct FilterConfig {
 impl Default for FilterConfig {
     fn default() -> Self {
         FilterConfig {
-            ext_authz_cluster: "ext_authz".to_owned(),
-            auth_service_path: "/auth".to_owned(),
-            cache_service_cluster: "cache_service".to_owned(),
+            management_service_cluster: "management_service".to_owned(),
+            ext_authz_service_path: "/auth".to_owned(),
             cache_service_path: "/cache".to_owned(),
             cache_update_duration: Duration::from_secs(360),
             ext_authz_authority: "ext_authz".to_owned(),
@@ -81,27 +77,27 @@ struct CacheFilterRoot {
 impl RootContext for CacheFilterRoot {
     fn on_configure(&mut self, _config_size: usize) -> bool {
         // Check for the configuration passed by envoy.yaml
-        let configuration: Vec<u8> = match self.get_configuration() {
-            Some(c) => c,
-            None => {
-                warn!("Configuration missing. Please check the envoy.yaml file for filter configuration");
+        // let configuration: Vec<u8> = match self.get_configuration() {
+        //     Some(c) => c,
+        //     None => {
+        //         warn!("Configuration missing. Please check the envoy.yaml file for filter configuration");
 
-                return false;
-            }
-        };
+        //         return false;
+        //     }
+        // };
 
-        // Parse and store the configuration passed by envoy.yaml
-        match serde_json::from_slice::<FilterConfig>(configuration.as_ref()) {
-            Ok(config) => {
-                debug!("configuring {}: {:?}", self.context_id, config);
-                CONFIGS.with(|configs| configs.borrow_mut().insert(self.context_id, config));
-            }
-            Err(e) => {
-                warn!("Failed to parse envoy.yaml configuration: {:?}", e);
+        // // Parse and store the configuration passed by envoy.yaml
+        // match serde_json::from_slice::<FilterConfig>(configuration.as_ref()) {
+        //     Ok(config) => {
+        //         debug!("configuring {}: {:?}", self.context_id, config);
+        //         CONFIGS.with(|configs| configs.borrow_mut().insert(self.context_id, config));
+        //     }
+        //     Err(e) => {
+        //         warn!("Failed to parse envoy.yaml configuration: {:?}", e);
 
-                return false;
-            }
-        }
+        //         return false;
+        //     }
+        // }
 
         // Configure an initialisation tick and the cache.
         self.set_tick_period(INITIALISATION_TICK);
@@ -125,11 +121,11 @@ impl RootContext for CacheFilterRoot {
 
                 // Dispatch an async HTTP call to the configured cluster.
                 self.dispatch_http_call(
-                    &config.cache_service_cluster,
+                    &config.management_service_cluster,
                     vec![
                         (":method", "GET"),
-                        (":path", &config.cache_service_path),
-                        (":authority", &config.cache_service_authority),
+                        (":path", &config.ext_authz_service_path),
+                        (":authority", &config.ext_authz_authority),
                     ],
                     None,
                     vec![],
@@ -184,3 +180,47 @@ impl Context for CacheFilterRoot {
 }
 
 struct CacheFilter {}
+
+impl HttpContext for CacheFilter {
+    fn on_http_request_headers(&mut self, _num_headers: usize) -> Action {
+        let path = self.get_http_request_header(":path").unwrap();
+        match self.get_shared_data(&path) {
+            (Some(cache), _) => {
+                debug!(
+                    "using existing path cache: {}",
+                    String::from_utf8(cache.clone()).unwrap()
+                );
+
+                // match self.parse_headers(&cache) {
+                //     Ok(headers) => {
+                //         for (name, value) in headers {
+                //             self.set_http_request_header(&name, value.as_str())
+                //         }
+                //     }
+                //     Err(e) => warn!("no usable headers cached: {:?}", e),
+                // }
+
+                Action::Continue
+            }
+            (None, _) => {
+                warn!("filter not initialised");
+
+                self.send_http_response(
+                    500,
+                    vec![("Powered-By", POWERED_BY)],
+                    Some(b"Filter not initialised"),
+                );
+
+                Action::Pause
+            }
+        }
+    }
+}
+
+impl Context for CacheFilter {}
+
+impl CacheFilter {
+    // fn print_cache_key(&self, key: &[u8]) {
+    //     info!("Cache key: {}", String::from_utf8(key.clone()).unwrap())
+    // }
+}
