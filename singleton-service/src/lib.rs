@@ -4,7 +4,6 @@ use proxy_wasm::{
     types::{Action, LogLevel},
 };
 
-use bincode;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -65,14 +64,11 @@ pub fn _start() {
                 .insert(context_id, FilterConfig::default());
         });
 
-        Box::new(CacheFilterRoot { context_id })
+        Box::new(SingletonServiceRoot { context_id })
     });
-    proxy_wasm::set_http_context(|_context_id, _root_context_id| -> Box<dyn HttpContext> {
-        Box::new(CacheFilter {})
-    })
 }
 
-struct CacheFilterRoot {
+struct SingletonServiceRoot {
     context_id: u32,
 }
 
@@ -82,9 +78,10 @@ struct Token {
     path: String,
 }
 
-impl RootContext for CacheFilterRoot {
+impl RootContext for SingletonServiceRoot {
     fn on_configure(&mut self, _config_size: usize) -> bool {
         //Check for the configuration passed by envoy.yaml
+        info!("YYYYYYYYYYYYYYYYYYYYYYYYYYYYY");
         let configuration: Vec<u8> = match self.get_configuration() {
             Some(c) => c,
             None => {
@@ -114,6 +111,7 @@ impl RootContext for CacheFilterRoot {
 
     fn on_tick(&mut self) {
         // Log the action that is about to be taken. It could be one of initialization, cache update or a retry
+        info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXX onTick triggered");
         match self.get_shared_data(CACHE_KEY) {
             (None, _) => debug!("initialising cache map"),
             (Some(_), _) => debug!("updating cache map"),
@@ -134,12 +132,13 @@ impl RootContext for CacheFilterRoot {
                 //let sampleBodySerilized = bincode::serialize(&sampleBody).unwrap();
                 let serlizedString = serde_json::to_string(&sampleBody).unwrap();
                 // Dispatch an async HTTP call to the configured cluster.
+                info!(">>>>>>>>>> context id: {:?}", &self.context_id);
                 self.dispatch_http_call(
-                    &config.management_service_cluster.as_str(),
+                    "management-service",
                     vec![
                         (":method", "POST"),
-                        (":path", &config.ext_authz_service_path.as_str()),
-                        (":authority", &config.ext_authz_authority.as_str()),
+                        (":path", "/auth"),
+                        (":authority", "ext_authz"),
                         ("Content-Type", "application/json"),
                     ],
                     Some(serlizedString.as_bytes()),
@@ -158,7 +157,7 @@ impl RootContext for CacheFilterRoot {
     }
 }
 
-impl Context for CacheFilterRoot {
+impl Context for SingletonServiceRoot {
     // Callbacks for cache update request
     fn on_http_call_response(
         &mut self,
@@ -192,57 +191,4 @@ impl Context for CacheFilterRoot {
             }
         }
     }
-}
-
-struct CacheFilter {}
-
-impl HttpContext for CacheFilter {
-    fn on_http_request_headers(&mut self, _num_headers: usize) -> Action {
-        let path = self.get_http_request_header(":path").unwrap();
-        match self.get_shared_data(&path) {
-            (Some(cache), _) => {
-                debug!(
-                    "using existing path cache: {}",
-                    String::from_utf8(cache.clone()).unwrap()
-                );
-
-                // match self.parse_headers(&cache) {
-                //     Ok(headers) => {
-                //         for (name, value) in headers {
-                //             self.set_http_request_header(&name, value.as_str())
-                //         }
-                //     }
-                //     Err(e) => warn!("no usable headers cached: {:?}", e),
-                // }
-
-                Action::Continue
-            }
-            (None, _) => {
-                warn!("filter not initialised");
-
-                self.send_http_response(
-                    500,
-                    vec![("Powered-By", POWERED_BY)],
-                    Some(b"Filter not initialised"),
-                );
-
-                Action::Pause
-            }
-        }
-    }
-}
-
-impl Context for CacheFilter {}
-
-impl CacheFilter {
-    fn parse_headers(&self, res: &[u8]) -> Result<Map<String, Value>, Box<dyn Error>> {
-        Ok(serde_json::from_slice::<Value>(&res)?
-            .as_object()
-            .unwrap()
-            .clone())
-    }
-
-    // fn print_cache_key(&self, key: &[u8]) {
-    //     info!("Cache key: {}", String::from_utf8(key.clone()).unwrap())
-    // }
 }

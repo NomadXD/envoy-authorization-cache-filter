@@ -34,6 +34,7 @@ struct Token {
 
 #[post("/auth", format = "json", data = "<check_request>")]
 fn authenticate(check_request: Json<Token>) -> Status {
+    info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
     let token: String = check_request.into_inner().token;
     let map = HASHMAP.lock().unwrap();
     let rate = map.get("/foo").unwrap();

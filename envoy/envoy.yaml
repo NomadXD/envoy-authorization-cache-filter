@@ -4,6 +4,33 @@ admin:
     socket_address:
       address: 0.0.0.0
       port_value: 9000
+bootstrap_extensions:
+- name: envoy.bootstrap.wasm
+  typed_config:
+    '@type': type.googleapis.com/envoy.extensions.wasm.v3.WasmService
+    singleton: true
+    config:
+      name: "cache_filter"
+      root_id: "cache_filter"
+      configuration: 
+        "@type": type.googleapis.com/google.protobuf.StringValue
+        value: |
+          {
+            "management_service_cluster": "management-service",
+            "ext_authz_service_path": "/auth",
+            "cache_service_path": "/cache",
+            "cache_update_duration": "10s",
+            "ext_authz_authority": "ext_authz",
+            "cache_service_authority": "cache"
+          }
+      vm_config:
+        runtime: "envoy.wasm.runtime.v8"
+        vm_id: "my_vm_id"
+        code:
+          local:
+            filename: "/usr/local/bin/cache_filter.wasm"
+        configuration: {}
+        allow_precompiled: true
 static_resources:
   listeners:
   - address:
@@ -37,33 +64,33 @@ static_resources:
                 route:
                   cluster: backend_service
           http_filters:
-          - name: envoy.filters.http.wasm
-            typed_config:
-              "@type": type.googleapis.com/udpa.type.v1.TypedStruct
-              type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
-              value:
-                config:
-                  name: "cache_filter"
-                  root_id: "cache_filter"
-                  configuration: 
-                    "@type": type.googleapis.com/google.protobuf.StringValue
-                    value: |
-                      {
-                        "management_service_cluster": "management-service",
-                        "ext_authz_service_path": "/auth",
-                        "cache_service_path": "/cache",
-                        "cache_update_duration": "10s",
-                        "ext_authz_authority": "ext_authz",
-                        "cache_service_authority": "cache"
-                      }
-                  vm_config:
-                    runtime: "envoy.wasm.runtime.v8"
-                    vm_id: "my_vm_id"
-                    code:
-                      local:
-                        filename: "/usr/local/bin/cache_filter.wasm"
-                    configuration: {}
-                    allow_precompiled: true
+          # - name: envoy.filters.http.wasm
+          #   typed_config:
+          #     "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+          #     type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+          #     value:
+          #       config:
+          #         name: "cache_filter"
+          #         root_id: "cache_filter"
+          #         configuration: 
+          #           "@type": type.googleapis.com/google.protobuf.StringValue
+          #           value: |
+          #             {
+          #               "management_service_cluster": "management-service",
+          #               "ext_authz_service_path": "/auth",
+          #               "cache_service_path": "/cache",
+          #               "cache_update_duration": "10s",
+          #               "ext_authz_authority": "ext_authz",
+          #               "cache_service_authority": "cache"
+          #             }
+          #         vm_config:
+          #           runtime: "envoy.wasm.runtime.v8"
+          #           vm_id: "my_vm_id"
+          #           code:
+          #             local:
+          #               filename: "/usr/local/bin/cache_filter.wasm"
+          #           configuration: {}
+          #           allow_precompiled: true
           - name: envoy.filters.http.router
             typed_config: {}
   clusters:
@@ -81,7 +108,7 @@ static_resources:
                 address: backend_service
                 port_value: 8000
   - name: management-service
-    connect_timeout: 0.25s
+    connect_timeout: 10s
     type: strict_dns
     lb_policy: round_robin
     load_assignment:

@@ -1,5 +1,5 @@
 [package]
-name = "cache-filter"
+name = "singleton-service"
 version = "0.1.0"
 authors = ["Lahiru <lahirudesilva.17@cse.mrt.ac.lk>"]
 edition = "2018"

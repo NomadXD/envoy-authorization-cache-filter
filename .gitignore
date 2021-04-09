@@ -1,3 +1,4 @@
 cache-filter/target/
 management-service/target/
 backend-service/target/
+singleton-service/target/
