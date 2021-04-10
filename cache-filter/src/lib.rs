@@ -54,6 +54,26 @@ struct AuthRequest {
     path: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct CacheRecord {
+    path: String,
+    quota: i32,
+    used: i32
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Cache {
+    foopath: String,
+    fooquota: i32,
+    fooused : i32,
+    barpath : String,
+    barquota: i32,
+    barused: i32
+}
+
+
+
+
 impl RootContext for CacheFilterRoot {
 
     fn on_vm_start(&mut self, _vm_configuration_size: usize) -> bool {
@@ -153,28 +173,62 @@ impl HttpContext for CacheFilter {
         // }
         let path = self.get_http_request_header(":path").unwrap();
         let token = self.get_http_request_header("Authorization");
+       
         match token {
             Some(token) => {
-                let sampleBody: AuthRequest = AuthRequest {
-                    token: token,
-                    path: path,
-                };
-                info!("path XXXXX: {}", sampleBody.path);
-                info!("auth XXXXX: {}", sampleBody.token);
-                let serlizedString = serde_json::to_string(&sampleBody).unwrap();
-                self.dispatch_http_call(
-                self.config.management_service_cluster.as_str(), 
-                vec![
-                    (":method", "POST"),
-                    (":path", self.config.ext_authz_service_path.as_str()),
-                    (":authority", self.config.ext_authz_authority.as_str()),
-                    ("Content-Type", "application/json"),
-                ],
-                Some(serlizedString.as_bytes()),
-                vec![],
-                Duration::from_secs(5)
-                ).unwrap();
-                Action::Pause
+                match self.get_cache_record(path.clone()) {
+                    Some(cache) => {
+                        if cache.used < cache.quota {
+                            self.update_cache_record(path.clone());
+                            return Action::Continue;
+                        }else{
+                            // TODO send local response
+                            return Action::Pause;
+                        }
+                    }
+                    None => {
+                        let sampleBody: AuthRequest = AuthRequest {
+                            token: token,
+                            path: path,
+                        };
+                        info!("path XXXXX: {}", sampleBody.path);
+                        info!("auth XXXXX: {}", sampleBody.token);
+                        let serlizedString = serde_json::to_string(&sampleBody).unwrap();
+                        self.dispatch_http_call(
+                        self.config.management_service_cluster.as_str(), 
+                        vec![
+                            (":method", "POST"),
+                            (":path", self.config.ext_authz_service_path.as_str()),
+                            (":authority", self.config.ext_authz_authority.as_str()),
+                            ("Content-Type", "application/json"),
+                        ],
+                         Some(serlizedString.as_bytes()),
+                        vec![],
+                        Duration::from_secs(5)
+                        ).unwrap();
+                        Action::Pause
+                    }
+                }
+                // let sampleBody: AuthRequest = AuthRequest {
+                //     token: token,
+                //     path: path,
+                // };
+                // info!("path XXXXX: {}", sampleBody.path);
+                // info!("auth XXXXX: {}", sampleBody.token);
+                // let serlizedString = serde_json::to_string(&sampleBody).unwrap();
+                // self.dispatch_http_call(
+                // self.config.management_service_cluster.as_str(), 
+                // vec![
+                //     (":method", "POST"),
+                //     (":path", self.config.ext_authz_service_path.as_str()),
+                //     (":authority", self.config.ext_authz_authority.as_str()),
+                //     ("Content-Type", "application/json"),
+                // ],
+                // Some(serlizedString.as_bytes()),
+                // vec![],
+                // Duration::from_secs(5)
+                // ).unwrap();
+                // Action::Pause
 
             }
             None => {
@@ -238,4 +292,57 @@ impl CacheFilter {
     // fn print_cache_key(&self, key: &[u8]) {
     //     info!("Cache key: {}", String::from_utf8(key.clone()).unwrap())
     // }
+
+    fn get_cache_record(&self, path: String) -> Option<CacheRecord> {
+        if path == "/foo" || path == "/bar" {
+            match self.get_shared_data(CACHE_KEY) {
+            (None, _) => return None,
+            (Some(data), _) => {
+                let cacheString = String::from_utf8(data.clone()).unwrap();
+                let cacheJson: Cache = serde_json::from_str(&cacheString).unwrap();
+                if path == "/foo" {
+                    return Some(CacheRecord{
+                        path: cacheJson.foopath,
+                        quota: cacheJson.fooquota,
+                        used: cacheJson.fooused
+                    })
+                }else{
+                    return Some(CacheRecord{
+                        path: cacheJson.barpath, 
+                        quota: cacheJson.barquota,
+                        used: cacheJson.barused
+                    })
+                }
+            },
+            }
+        }else{
+            return None
+        }
+        
+    }
+
+    fn update_cache_record(&self, path: String) -> bool {
+        match self.get_shared_data(CACHE_KEY) {
+            (None, _) => return false,
+            (Some(data), _) => {
+                let cacheString = String::from_utf8(data.clone()).unwrap();
+                let mut cacheJson: Cache = serde_json::from_str(&cacheString).unwrap();
+                if path == "foo" {
+                    cacheJson.fooused += 1
+                }else{
+                    cacheJson.barused += 1
+                }
+                let updatedCache = serde_json::to_vec(&cacheJson).unwrap();
+                match self.set_shared_data(CACHE_KEY, Some(&updatedCache), None) {
+                    Ok(()) => return true,
+
+                    Err(e) => {
+                        warn!("cache update failed: {:?}", e);
+                        return false
+                // Reset to an initialisation tick for a quick retry.
+                    }
+                }
+            },
+            }
+    }
 }

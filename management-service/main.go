@@ -100,9 +100,9 @@ func main() {
 		BarQuota: 10,
 		BarUsed:  0,
 
-		BazPath:  "/baz",
-		BazQuota: 10,
-		BazUsed:  0,
+		// BazPath:  "/baz",
+		// BazQuota: 10,
+		// BazUsed:  0,
 	}
 
 	fmt.Println(cache)
