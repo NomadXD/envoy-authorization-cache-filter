@@ -1,13 +1,13 @@
 use log::{debug, info, trace, warn};
 use proxy_wasm::{
-    traits::{Context, HttpContext, RootContext},
+    traits::{Context, RootContext},
     types::{Action, LogLevel},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, __private::ser};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
-use std::{borrow::Borrow, cell::RefCell, collections::HashMap, error::Error, time::Duration};
+use std::{borrow::Borrow, collections::HashMap, error::Error, time::Duration};
 
 const CACHE_KEY: &str = "cache";
 const INITIALISATION_TICK: Duration = Duration::from_secs(10);
@@ -20,18 +20,12 @@ struct FilterConfig {
     /// name of the ext_authz cluster in the envoy.yaml file.
     management_service_cluster: String,
 
-    /// The path to call on the HTTP service for ext_authz
-    ext_authz_service_path: String,
-
     /// The path to call on the HTTP service for cache
     cache_service_path: String,
 
     /// Time duration for the cache update
     #[serde(with = "serde_humanize_rs")]
     cache_update_duration: Duration,
-
-    /// External auth request authority header
-    ext_authz_authority: String,
 
     /// Cache service request authority header
     cache_service_authority: String,
@@ -41,35 +35,29 @@ impl Default for FilterConfig {
     fn default() -> Self {
         FilterConfig {
             management_service_cluster: "management-service".to_owned(),
-            ext_authz_service_path: "/auth".to_owned(),
             cache_service_path: "/cache".to_owned(),
             cache_update_duration: Duration::from_secs(360),
-            ext_authz_authority: "ext_authz".to_owned(),
             cache_service_authority: "cache_service".to_owned(),
         }
     }
-}
-
-thread_local! {
-    static CONFIGS: RefCell<HashMap<u32, FilterConfig>> = RefCell::new(HashMap::new())
 }
 
 #[no_mangle]
 pub fn _start() {
     proxy_wasm::set_log_level(LogLevel::Trace);
     proxy_wasm::set_root_context(|context_id| -> Box<dyn RootContext> {
-        CONFIGS.with(|configs| {
-            configs
-                .borrow_mut()
-                .insert(context_id, FilterConfig::default());
-        });
-
-        Box::new(SingletonServiceRoot { context_id })
+        // CONFIGS.with(|configs| {
+        //     configs
+        //         .borrow_mut()
+        //         .insert(context_id, FilterConfig::default());
+        // });
+        Box::new(SingletonService { context_id , config: FilterConfig::default()})
     });
 }
 
-struct SingletonServiceRoot {
+struct SingletonService {
     context_id: u32,
+    config: FilterConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -78,10 +66,10 @@ struct Token {
     path: String,
 }
 
-impl RootContext for SingletonServiceRoot {
+impl RootContext for SingletonService {
     fn on_configure(&mut self, _config_size: usize) -> bool {
         //Check for the configuration passed by envoy.yaml
-        info!("YYYYYYYYYYYYYYYYYYYYYYYYYYYYY");
+        // info!("YYYYYYYYYYYYYYYYYYYYYYYYYYYYY");
         let configuration: Vec<u8> = match self.get_configuration() {
             Some(c) => c,
             None => {
@@ -95,7 +83,8 @@ impl RootContext for SingletonServiceRoot {
         match serde_json::from_slice::<FilterConfig>(configuration.as_ref()) {
             Ok(config) => {
                 debug!("configuring {}: {:?}", self.context_id, config);
-                CONFIGS.with(|configs| configs.borrow_mut().insert(self.context_id, config));
+                // CONFIGS.with(|configs| configs.borrow_mut().insert(self.context_id, config));
+                self.config = config;
             }
             Err(e) => {
                 warn!("Failed to parse envoy.yaml configuration: {:?}", e);
@@ -117,47 +106,96 @@ impl RootContext for SingletonServiceRoot {
             (Some(_), _) => debug!("updating cache map"),
         }
 
-        CONFIGS.with(|configs| {
-            configs.borrow().get(&self.context_id).map(|config| {
-                // Update the tick to the cache update duration. This can be one of follows.
-                // initial_tick_duration -> cache_update_duration
-                // cache_update_duration -> cache_update_duration
-                // Also when the cache_update request fails, set_tick_period to initial_tick_duration
-                self.set_tick_period(config.cache_update_duration);
+        //CONFIGS.with(|configs| {
+        //configs.borrow().get(&self.context_id).map(|config| {
+        // Update the tick to the cache update duration. This can be one of follows.
+        // initial_tick_duration -> cache_update_duration
+        // cache_update_duration -> cache_update_duration
+        // Also when the cache_update request fails, set_tick_period to initial_tick_duration
+        self.set_tick_period(Duration::from_secs(20));
 
-                let sampleBody: Token = Token {
-                    token: "12345".to_string(),
-                    path: "/foo".to_string(),
-                };
-                //let sampleBodySerilized = bincode::serialize(&sampleBody).unwrap();
-                let serlizedString = serde_json::to_string(&sampleBody).unwrap();
-                // Dispatch an async HTTP call to the configured cluster.
-                info!(">>>>>>>>>> context id: {:?}", &self.context_id);
+        match self.get_shared_data(CACHE_KEY){
+            (None, _) => {
+
                 self.dispatch_http_call(
-                    "management-service",
-                    vec![
-                        (":method", "POST"),
-                        (":path", "/auth"),
-                        (":authority", "ext_authz"),
-                        ("Content-Type", "application/json"),
-                    ],
-                    Some(serlizedString.as_bytes()),
-                    vec![],
-                    Duration::from_secs(5),
-                )
-                .map_err(|e| {
-                    // HTTP call failed. Reset to an
-                    // initialisation tick for a quick retry.
-                    self.set_tick_period(INITIALISATION_TICK);
+            "management-service",
+            vec![
+                (":method", "POST"),
+                (":path", "/cache"),
+                (":authority", "management-service"),
+                ("Content-Type", "application/json"),
+            ],
+            None,
+            vec![],
+            Duration::from_secs(5),
+        ).map_err(|e| {
+            // HTTP call failed. Reset to an
+            // initialisation tick for a quick retry.
+            self.set_tick_period(INITIALISATION_TICK);
 
-                    warn!("Failed calling cache service: {:?}", e)
-                })
-            })
+            warn!("Failed calling cache service: {:?}", e)
         });
+                
+            },
+            (Some(data), _) => {
+                let dataString = String::from_utf8(data.clone()).unwrap();
+                //let dataString = serde_json::to_string(&data).unwrap();
+                info!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> {}", dataString);
+                self.dispatch_http_call(
+            "management-service",
+            vec![
+                (":method", "POST"),
+                (":path", "/cache"),
+                (":authority", "management-service"),
+                ("Content-Type", "application/json"),
+            ],
+            Some(dataString.as_bytes()),
+            vec![],
+            Duration::from_secs(5),
+        )
+        .map_err(|e| {
+            // HTTP call failed. Reset to an
+            // initialisation tick for a quick retry.
+            self.set_tick_period(INITIALISATION_TICK);
+
+            warn!("Failed calling cache service: {:?}", e)
+        });
+            }
+        }
+
+        // let sampleBody: Token = Token {
+        //     token: "12345".to_string(),
+        //     path: "/foo".to_string(),
+        // };
+        // //let sampleBodySerilized = bincode::serialize(&sampleBody).unwrap();
+        // let serlizedString = serde_json::to_string(&sampleBody).unwrap();
+        // // Dispatch an async HTTP call to the configured cluster.
+        // //info!(">>>>>>>>>> XXXXXXXXXXX context id: {:?}", &self.context_id);
+        // self.dispatch_http_call(
+        //     "management-service",
+        //     vec![
+        //         (":method", "POST"),
+        //         (":path", "/auth"),
+        //         (":authority", "management-service"),
+        //         ("Content-Type", "application/json"),
+        //     ],
+        //     Some(serlizedString.as_bytes()),
+        //     vec![],
+        //     Duration::from_secs(5),
+        // )
+        // .map_err(|e| {
+        //     // HTTP call failed. Reset to an
+        //     // initialisation tick for a quick retry.
+        //     self.set_tick_period(INITIALISATION_TICK);
+
+        //     warn!("Failed calling cache service: {:?}", e)
+        // });
+        //})
+        //});
     }
 }
 
-impl Context for SingletonServiceRoot {
+impl Context for SingletonService {
     // Callbacks for cache update request
     fn on_http_call_response(
         &mut self,
@@ -192,3 +230,6 @@ impl Context for SingletonServiceRoot {
         }
     }
 }
+
+// =============================================
+

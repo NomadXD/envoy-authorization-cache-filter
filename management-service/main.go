@@ -6,11 +6,19 @@ import (
 	"net/http"
 )
 
-// CacheRecord represents a single record for a particular route
-type CacheRecord struct {
-	Path  string
-	Quota int
-	Used  int
+// Cache represents a single record for a particular route
+type Cache struct {
+	FooPath  string `json:"foopath"`
+	FooQuota int    `json:"fooquota"`
+	FooUsed  int    `json:"fooused"`
+
+	BarPath  string `json:"barpath"`
+	BarQuota int    `json:"barquota"`
+	BarUsed  int    `json:"barused"`
+
+	BazPath  string `json:"bazpath"`
+	BazQuota int    `json:"bazquota"`
+	BazUsed  int    `json:"bazused"`
 }
 
 // AuthRequest represents the data that is received from the cache filter
@@ -26,7 +34,13 @@ type AuthResponse struct {
 	RateLimitHeader string `json:"ratelimit"`
 }
 
-func auth(w http.ResponseWriter, req *http.Request) {
+// type CacheMap struct {
+// 	Records []CacheRecord `json:"array"`
+// }
+
+var cache Cache
+
+func authHandler(w http.ResponseWriter, req *http.Request) {
 
 	switch req.Method {
 	case "POST":
@@ -57,21 +71,43 @@ func auth(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func cache(w http.ResponseWriter, req *http.Request) {
+func cacheHandler(w http.ResponseWriter, req *http.Request) {
 
-	for name, headers := range req.Header {
-		for _, h := range headers {
-			fmt.Fprintf(w, "%v: %v\n", name, h)
+	switch req.Method {
+	case "POST":
+		var cacheUpdate Cache
+		//err := json.Unmarshal(req.Body, &temp)
+		fmt.Println(req.Body)
+		err := json.NewDecoder(req.Body).Decode(&cacheUpdate)
+		if err != nil {
+			fmt.Printf("Error : %v", err)
+			//panic(err)
 		}
+		fmt.Printf("MMMMMMMMMMMMMMMM :%v", cacheUpdate)
+		jsonCache, _ := json.Marshal(cache)
+		w.Write(jsonCache)
 	}
 }
 
 func main() {
 
-	cacheArr := []CacheRecord{{"/foo", 10, 0}, {"/bar", 10, 0}, {"/baz", 10, 0}}
-	fmt.Println(cacheArr)
-	http.HandleFunc("/auth", auth)
-	http.HandleFunc("/cache", cache)
+	cache = Cache{
+		FooPath:  "/foo",
+		FooQuota: 10,
+		FooUsed:  0,
+
+		BarPath:  "/bar",
+		BarQuota: 10,
+		BarUsed:  0,
+
+		BazPath:  "/baz",
+		BazQuota: 10,
+		BazUsed:  0,
+	}
+
+	fmt.Println(cache)
+	http.HandleFunc("/auth", authHandler)
+	http.HandleFunc("/cache", cacheHandler)
 
 	http.ListenAndServe(":8000", nil)
 }
