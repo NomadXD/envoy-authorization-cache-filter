@@ -1,13 +1,33 @@
-FROM rustlang/rust:nightly
+FROM golang:alpine
 
-WORKDIR /usr/src/management-service
+# Set necessary environmet variables needed for our image
+ENV GO111MODULE=on \
+    CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64
 
+# Move to working directory /build
+WORKDIR /build
+
+# Copy and download dependency using go mod
+COPY go.mod .
+#COPY go.sum .
+RUN go mod download
+
+# Copy the code into the container
 COPY . .
 
-RUN cargo build --release
+# Build the application
+RUN go build -o main .
 
-RUN cargo install --path .
+# Move to /dist directory as the place for resulting binary folder
+WORKDIR /dist
 
-EXPOSE 8000
+# Copy binary from build to main folder
+RUN cp /build/main .
 
-CMD ["/usr/local/cargo/bin/management-service"]
+# Export necessary port
+EXPOSE 3000
+
+# Command to run when starting the container
+CMD ["/dist/main"]
