@@ -223,9 +223,15 @@ impl Context for CacheFilter {
                         vec![("x-powered-by", POWERED_BY)],
                         Some(b"Unauthorized\n"),
                     )
+                } else if status == 429 {
+                    self.send_http_response(
+                        429,
+                        vec![("x-powered-by", POWERED_BY)],
+                        Some(b"Service Quota Reached\n"),
+                    )
                 } else {
                     self.send_http_response(
-                        503,
+                        500,
                         vec![("x-powered-by", POWERED_BY)],
                         Some(b"Service Unavailable\n"),
                     )
