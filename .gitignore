@@ -1,5 +1,4 @@
 cache-filter/target/
-management-service/target/
-backend-service/target/
+management-service/node_modules/
+backend-service/node_modules/
 singleton-service/target/
-management-service-1/target/

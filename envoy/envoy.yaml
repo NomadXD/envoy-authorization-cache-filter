@@ -4,26 +4,26 @@ admin:
     socket_address:
       address: 0.0.0.0
       port_value: 9000
-# bootstrap_extensions:
-# - name: envoy.bootstrap.wasm
-#   typed_config:
-#     '@type': type.googleapis.com/envoy.extensions.wasm.v3.WasmService
-#     singleton: true
-#     config:
-#       name: "singleton_service"
-#       root_id: "singleton_service"
-#       configuration: 
-#         "@type": type.googleapis.com/google.protobuf.StringValue
-#         value: |
-#           {}
-#       vm_config:
-#         runtime: "envoy.wasm.runtime.v8"
-#         vm_id: "my_vm_id"
-#         code:
-#           local:
-#             filename: "/usr/local/bin/singleton_service.wasm"
-#         configuration: {}
-#         allow_precompiled: true
+bootstrap_extensions:
+- name: envoy.bootstrap.wasm
+  typed_config:
+    '@type': type.googleapis.com/envoy.extensions.wasm.v3.WasmService
+    singleton: true
+    config:
+      name: "singleton_service"
+      root_id: "singleton_service"
+      configuration: 
+        "@type": type.googleapis.com/google.protobuf.StringValue
+        value: |
+          {}
+      vm_config:
+        runtime: "envoy.wasm.runtime.v8"
+        vm_id: "my_vm_id"
+        code:
+          local:
+            filename: "/usr/local/bin/singleton_service.wasm"
+        configuration: {}
+        allow_precompiled: true
 static_resources:
   listeners:
   - address:
@@ -71,10 +71,7 @@ static_resources:
                       {
                         "management_service_cluster": "management-service",
                         "ext_authz_service_path": "/auth",
-                        "cache_service_path": "/cache",
-                        "cache_update_duration": "10s",
-                        "ext_authz_authority": "ext_authz",
-                        "cache_service_authority": "cache"
+                        "ext_authz_authority": "ext_authz"
                       }
                   vm_config:
                     runtime: "envoy.wasm.runtime.v8"

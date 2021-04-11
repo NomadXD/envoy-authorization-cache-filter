@@ -1,10 +1,13 @@
 use log::{debug, info, trace, warn};
-use proxy_wasm::{traits::{Context, HttpContext, RootContext}, types::{Action, ContextType, LogLevel}};
+use proxy_wasm::{
+    traits::{Context, HttpContext, RootContext},
+    types::{Action, ContextType, LogLevel},
+};
 
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::{json, Map, Value};
-use std::{time::Duration};
+use serde_json::Value;
+use std::time::Duration;
 
 const CACHE_KEY: &str = "cache";
 const POWERED_BY: &str = "cache-filter";
@@ -21,7 +24,6 @@ struct FilterConfig {
 
     /// External auth request authority header
     ext_authz_authority: String,
-
 }
 
 impl Default for FilterConfig {
@@ -34,12 +36,14 @@ impl Default for FilterConfig {
     }
 }
 
-
 #[no_mangle]
 pub fn _start() {
     proxy_wasm::set_log_level(LogLevel::Trace);
     proxy_wasm::set_root_context(|context_id| -> Box<dyn RootContext> {
-        Box::new(CacheFilterRoot { context_id , config: FilterConfig::default()})
+        Box::new(CacheFilterRoot {
+            context_id,
+            config: FilterConfig::default(),
+        })
     });
 }
 
@@ -58,24 +62,21 @@ struct AuthRequest {
 struct CacheRecord {
     path: String,
     quota: i32,
-    used: i32
+    used: i32,
 }
 
+// Local cache representation
 #[derive(Serialize, Deserialize, Debug)]
 struct Cache {
-    foopath: String,
-    fooquota: i32,
-    fooused : i32,
-    barpath : String,
-    barquota: i32,
-    barused: i32
+    foo_path: String,
+    foo_quota: i32,
+    foo_used: i32,
+    bar_path: String,
+    bar_quota: i32,
+    bar_used: i32,
 }
 
-
-
-
 impl RootContext for CacheFilterRoot {
-
     fn on_vm_start(&mut self, _vm_configuration_size: usize) -> bool {
         info!("VM started");
         true
@@ -87,7 +88,6 @@ impl RootContext for CacheFilterRoot {
             Some(c) => c,
             None => {
                 warn!("Configuration missing. Please check the envoy.yaml file for filter configuration");
-
                 return false;
             }
         };
@@ -96,21 +96,19 @@ impl RootContext for CacheFilterRoot {
         match serde_json::from_slice::<FilterConfig>(configuration.as_ref()) {
             Ok(config) => {
                 debug!("configuring {}: {:?}", self.context_id, config);
-                //CONFIGS.with(|configs| configs.borrow_mut().insert(self.context_id, config));
                 self.config = config;
+                return true;
             }
             Err(e) => {
                 warn!("Failed to parse envoy.yaml configuration: {:?}", e);
-
                 return false;
             }
         }
-        return true;
     }
 
     fn create_http_context(&self, _context_id: u32) -> Option<Box<dyn HttpContext>> {
-        Some(Box::new(CacheFilter{
-            config: self.config.clone()
+        Some(Box::new(CacheFilter {
+            config: self.config.clone(),
         }))
     }
 
@@ -122,150 +120,124 @@ impl RootContext for CacheFilterRoot {
 impl Context for CacheFilterRoot {}
 
 struct CacheFilter {
-    config : FilterConfig,
+    config: FilterConfig,
 }
 
 impl HttpContext for CacheFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize) -> Action {
-        // let path = self.get_http_request_header(":path").unwrap();
-        // info!("path XXXXX: {}", path);
-        // match self.get_shared_data(&path) {
-        //     (Some(cache), _) => {
-        //         debug!(
-        //             "using existing path cache: {}",
-        //             String::from_utf8(cache.clone()).unwrap()
-        //         );
-
-        //         // match self.parse_headers(&cache) {
-        //         //     Ok(headers) => {
-        //         //         for (name, value) in headers {
-        //         //             self.set_http_request_header(&name, value.as_str())
-        //         //         }
-        //         //     }
-        //         //     Err(e) => warn!("no usable headers cached: {:?}", e),
-        //         // }
-
-        //         Action::Continue
-        //     }
-        //     (None, _) => {
-        //         warn!("filter not initialised");
-
-        //         self.dispatch_http_call(
-        //             self.config.auth_cluster.as_str(), vec![
-        //                 (":method", "POST"),
-        //                 (":path", self.config.token_uri.as_str()),
-        //                 (":authority", self.config.auth_host.as_str()),
-        //                 ("Content-Type", "application/x-www-form-urlencoded"),
-        //             ],
-        //             Some(data.as_bytes()),
-        //             vec![],
-        //             Duration::from_secs(5)
-        //         ).unwrap();
-
-        //         // self.send_http_response(
-        //         //     500,
-        //         //     vec![("Powered-By", POWERED_BY)],
-        //         //     Some(b"Filter not initialised"),
-        //         // );
-
-        //         Action::Pause
-        //     }
-        // }
         let path = self.get_http_request_header(":path").unwrap();
         let token = self.get_http_request_header("Authorization");
-       
+        info!("request intercepted by the cache-filter with path {}", path);
+        // Check for Authorization header
         match token {
+            // If Authorization header available
             Some(token) => {
+                // Check local cache for cacheable rules and decide request flow
+                info!("Authorization header available | path {}", path);
                 match self.get_cache_record(path.clone()) {
+                    // If a record exist in local cache and quota remaining -> Action::Continue
                     Some(cache) => {
+                        info!("Record exist in the local cache");
                         if cache.used < cache.quota {
                             self.update_cache_record(path.clone());
+                            info!("Service quota not reached. Proxying the request upstream | path {}", path);
                             return Action::Continue;
-                        }else{
-                            // TODO send local response
+                        } else {
+                            // Local cache exist but quota reached
+                            info!(
+                                "Service quota reached. Sending local response | path {}",
+                                path
+                            );
+                            self.send_http_response(
+                                429,
+                                vec![("x-powered-by", POWERED_BY)],
+                                Some(b"Service quota reached.\n"),
+                            );
                             return Action::Pause;
                         }
                     }
+                    // No record found in the local cache. Send request to management-service for authorization
                     None => {
-                        let sampleBody: AuthRequest = AuthRequest {
+                        let auth_request: AuthRequest = AuthRequest {
                             token: token,
                             path: path,
                         };
-                        info!("path XXXXX: {}", sampleBody.path);
-                        info!("auth XXXXX: {}", sampleBody.token);
-                        let serlizedString = serde_json::to_string(&sampleBody).unwrap();
+                        info!("No record found in the local cache. Send request to management-service for authorization: {}", auth_request.path);
+                        let request_string = serde_json::to_string(&auth_request).unwrap();
                         self.dispatch_http_call(
-                        self.config.management_service_cluster.as_str(), 
-                        vec![
-                            (":method", "POST"),
-                            (":path", self.config.ext_authz_service_path.as_str()),
-                            (":authority", self.config.ext_authz_authority.as_str()),
-                            ("Content-Type", "application/json"),
-                        ],
-                         Some(serlizedString.as_bytes()),
-                        vec![],
-                        Duration::from_secs(5)
-                        ).unwrap();
+                            self.config.management_service_cluster.as_str(),
+                            vec![
+                                (":method", "POST"),
+                                (":path", self.config.ext_authz_service_path.as_str()),
+                                (":authority", self.config.ext_authz_authority.as_str()),
+                                ("Content-Type", "application/json"),
+                            ],
+                            Some(request_string.as_bytes()),
+                            vec![],
+                            Duration::from_secs(5),
+                        )
+                        .unwrap();
                         Action::Pause
                     }
                 }
-                // let sampleBody: AuthRequest = AuthRequest {
-                //     token: token,
-                //     path: path,
-                // };
-                // info!("path XXXXX: {}", sampleBody.path);
-                // info!("auth XXXXX: {}", sampleBody.token);
-                // let serlizedString = serde_json::to_string(&sampleBody).unwrap();
-                // self.dispatch_http_call(
-                // self.config.management_service_cluster.as_str(), 
-                // vec![
-                //     (":method", "POST"),
-                //     (":path", self.config.ext_authz_service_path.as_str()),
-                //     (":authority", self.config.ext_authz_authority.as_str()),
-                //     ("Content-Type", "application/json"),
-                // ],
-                // Some(serlizedString.as_bytes()),
-                // vec![],
-                // Duration::from_secs(5)
-                // ).unwrap();
-                // Action::Pause
-
             }
+            // Authorization header not available. Send a local response with 403
             None => {
-                self.send_http_response(403, vec![("Powered-By", "proxy-wasm")], Some(b"Access forbidden.\n"));
+                self.send_http_response(
+                    403,
+                    vec![("x-powered-by", POWERED_BY)],
+                    Some(b"Access forbidden.\n"),
+                );
                 Action::Pause
             }
         }
-        
-
     }
 }
 
 impl Context for CacheFilter {
-    fn on_http_call_response(&mut self, _token_id: u32, _num_headers: usize, body_size: usize, _num_trailers: usize) {
+    fn on_http_call_response(
+        &mut self,
+        _token_id: u32,
+        _num_headers: usize,
+        body_size: usize,
+        _num_trailers: usize,
+    ) {
         if let Some(body) = self.get_http_call_response_body(0, body_size) {
             let data: Value = serde_json::from_slice(body.as_slice()).unwrap();
-            debug!("Received json blob: {}", data);
+            info!(
+                "Authorization response received from management service: {}",
+                data
+            );
             if data.get("status") != None {
                 //info!("Error fetching token: {}, {}", data.get("error").unwrap(), data.get("error_description").unwrap());
                 //return
                 // if(data.get("status").unwrap() == 200){
                 //     self.resume_http_request();
                 // }else
-                let status = data.get("status").unwrap().as_u64();
-                if status.unwrap() == 200{
+                let status = data.get("status").unwrap().as_u64().unwrap();
+                if status == 200 {
                     self.resume_http_request();
-                }else if status.unwrap() == 401 {
-                    self.send_http_response(401, vec![("Powered-By", "WASM")],
-                    Some(b"Unauthorized"))
-                }else{
-                    self.send_http_response(500, vec![("Powered-By", "WASM")],
-                    Some(b"Unauthorized"))
+                } else if status == 401 {
+                    self.send_http_response(
+                        401,
+                        vec![("x-powered-by", POWERED_BY)],
+                        Some(b"Unauthorized\n"),
+                    )
+                } else {
+                    self.send_http_response(
+                        503,
+                        vec![("x-powered-by", POWERED_BY)],
+                        Some(b"Service Unavailable\n"),
+                    )
                 }
-            }else{
-                self.send_http_response(500, vec![("Powered-By", "WASM")],
-                    Some(b"Unauthorized"))
+            } else {
+                self.send_http_response(
+                    500,
+                    vec![("x-powered-by", POWERED_BY)],
+                    Some(b"Service Unavailable\n"),
+                )
             }
+
             // if data.get("id_token") != None {
             //     info!("id_token found. Setting cookie and redirecting...");
             //     self.send_http_response(
@@ -278,15 +250,21 @@ impl Context for CacheFilter {
             //     );
             //     return
             // }
+        } else {
+            self.send_http_response(
+                500,
+                vec![("x-powered-by", POWERED_BY)],
+                Some(b"Service Unavailable\n"),
+            )
         }
-        
-        self.resume_http_request()
+
+        //self.resume_http_request()
     }
 }
 
 impl CacheFilter {
     // fn parse_headers(&self, headers: Vec<(String, String)>) -> String {
-    //     for 
+    //     for
     // }
 
     // fn print_cache_key(&self, key: &[u8]) {
@@ -296,53 +274,52 @@ impl CacheFilter {
     fn get_cache_record(&self, path: String) -> Option<CacheRecord> {
         if path == "/foo" || path == "/bar" {
             match self.get_shared_data(CACHE_KEY) {
-            (None, _) => return None,
-            (Some(data), _) => {
-                let cacheString = String::from_utf8(data.clone()).unwrap();
-                let cacheJson: Cache = serde_json::from_str(&cacheString).unwrap();
-                if path == "/foo" {
-                    return Some(CacheRecord{
-                        path: cacheJson.foopath,
-                        quota: cacheJson.fooquota,
-                        used: cacheJson.fooused
-                    })
-                }else{
-                    return Some(CacheRecord{
-                        path: cacheJson.barpath, 
-                        quota: cacheJson.barquota,
-                        used: cacheJson.barused
-                    })
+                (None, _) => return None,
+                (Some(data), _) => {
+                    let cache = String::from_utf8(data.clone()).unwrap();
+                    info!("Getting local cache: {}", cache);
+                    let cache_json: Cache = serde_json::from_str(&cache).unwrap();
+                    if path == "/foo" {
+                        return Some(CacheRecord {
+                            path: cache_json.foo_path,
+                            quota: cache_json.foo_quota,
+                            used: cache_json.foo_used,
+                        });
+                    } else {
+                        return Some(CacheRecord {
+                            path: cache_json.bar_path,
+                            quota: cache_json.bar_quota,
+                            used: cache_json.bar_used,
+                        });
+                    }
                 }
-            },
             }
-        }else{
-            return None
+        } else {
+            return None;
         }
-        
     }
 
     fn update_cache_record(&self, path: String) -> bool {
         match self.get_shared_data(CACHE_KEY) {
             (None, _) => return false,
             (Some(data), _) => {
-                let cacheString = String::from_utf8(data.clone()).unwrap();
-                let mut cacheJson: Cache = serde_json::from_str(&cacheString).unwrap();
-                if path == "foo" {
-                    cacheJson.fooused += 1
-                }else{
-                    cacheJson.barused += 1
+                let cache = String::from_utf8(data.clone()).unwrap();
+                let mut cache_json: Cache = serde_json::from_str(&cache).unwrap();
+                if path == "/foo" {
+                    cache_json.foo_used += 1
+                } else {
+                    cache_json.bar_used += 1
                 }
-                let updatedCache = serde_json::to_vec(&cacheJson).unwrap();
-                match self.set_shared_data(CACHE_KEY, Some(&updatedCache), None) {
+                let updated_cache = serde_json::to_vec(&cache_json).unwrap();
+                match self.set_shared_data(CACHE_KEY, Some(&updated_cache), None) {
                     Ok(()) => return true,
 
                     Err(e) => {
                         warn!("cache update failed: {:?}", e);
-                        return false
-                // Reset to an initialisation tick for a quick retry.
+                        return false;
                     }
                 }
-            },
             }
+        }
     }
 }
