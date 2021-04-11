@@ -1,13 +1,12 @@
 use log::{debug, info, trace, warn};
 use proxy_wasm::{
     traits::{Context, RootContext},
-    types::{Action, LogLevel},
+    types::LogLevel,
 };
 
-use serde::{Deserialize, __private::ser};
+use serde::Deserialize;
 use serde::Serialize;
-use serde_json::{json, Map, Value};
-use std::{borrow::Borrow, collections::HashMap, error::Error, time::Duration};
+use std::time::Duration;
 
 const CACHE_KEY: &str = "cache";
 const INITIALISATION_TICK: Duration = Duration::from_secs(10);
@@ -46,12 +45,10 @@ impl Default for FilterConfig {
 pub fn _start() {
     proxy_wasm::set_log_level(LogLevel::Trace);
     proxy_wasm::set_root_context(|context_id| -> Box<dyn RootContext> {
-        // CONFIGS.with(|configs| {
-        //     configs
-        //         .borrow_mut()
-        //         .insert(context_id, FilterConfig::default());
-        // });
-        Box::new(SingletonService { context_id , config: FilterConfig::default()})
+        Box::new(SingletonService {
+            context_id,
+            config: FilterConfig::default(),
+        })
     });
 }
 
@@ -69,12 +66,10 @@ struct Token {
 impl RootContext for SingletonService {
     fn on_configure(&mut self, _config_size: usize) -> bool {
         //Check for the configuration passed by envoy.yaml
-        // info!("YYYYYYYYYYYYYYYYYYYYYYYYYYYYY");
         let configuration: Vec<u8> = match self.get_configuration() {
             Some(c) => c,
             None => {
                 warn!("Configuration missing. Please check the envoy.yaml file for filter configuration");
-
                 return false;
             }
         };
@@ -83,12 +78,10 @@ impl RootContext for SingletonService {
         match serde_json::from_slice::<FilterConfig>(configuration.as_ref()) {
             Ok(config) => {
                 debug!("configuring {}: {:?}", self.context_id, config);
-                // CONFIGS.with(|configs| configs.borrow_mut().insert(self.context_id, config));
                 self.config = config;
             }
             Err(e) => {
                 warn!("Failed to parse envoy.yaml configuration: {:?}", e);
-
                 return false;
             }
         }
@@ -100,98 +93,72 @@ impl RootContext for SingletonService {
 
     fn on_tick(&mut self) {
         // Log the action that is about to be taken. It could be one of initialization, cache update or a retry
-        info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXX onTick triggered");
+        info!("onTick triggered");
         match self.get_shared_data(CACHE_KEY) {
-            (None, _) => debug!("initialising cache map"),
-            (Some(_), _) => debug!("updating cache map"),
+            (None, _) => debug!("initialising local cache"),
+            (Some(_), _) => debug!("updating local cache"),
         }
 
-        //CONFIGS.with(|configs| {
-        //configs.borrow().get(&self.context_id).map(|config| {
         // Update the tick to the cache update duration. This can be one of follows.
         // initial_tick_duration -> cache_update_duration
         // cache_update_duration -> cache_update_duration
         // Also when the cache_update request fails, set_tick_period to initial_tick_duration
         self.set_tick_period(Duration::from_secs(20));
 
-        match self.get_shared_data(CACHE_KEY){
+        match self.get_shared_data(CACHE_KEY) {
+            // No local cache. Send a GET to pull cacheable rules
             (None, _) => {
-
+                info!("initialising local cache");
                 self.dispatch_http_call(
-            "management-service",
-            vec![
-                (":method", "POST"),
-                (":path", "/cache"),
-                (":authority", "management-service"),
-                ("Content-Type", "application/json"),
-            ],
-            None,
-            vec![],
-            Duration::from_secs(5),
-        ).map_err(|e| {
-            // HTTP call failed. Reset to an
-            // initialisation tick for a quick retry.
-            self.set_tick_period(INITIALISATION_TICK);
+                    "management-service",
+                    vec![
+                        (":method", "GET"),
+                        (":path", "/cache"),
+                        (":authority", "management-service"),
+                        ("Content-Type", "application/json"),
+                        ("x-powered-by", POWERED_BY),
+                    ],
+                    None,
+                    vec![],
+                    Duration::from_secs(5),
+                )
+                .map_err(|e| {
+                    // HTTP call failed. Reset to an
+                    // initialisation tick for a quick retry.
+                    self.set_tick_period(INITIALISATION_TICK);
 
-            warn!("Failed calling cache service: {:?}", e)
-        });
-                
-            },
+                    warn!("Failed calling management service: {:?}", e)
+                })
+                .unwrap();
+            }
+            // Local cache available. Send local cache to management service for synchronization
+            // and update the local cache with a new version
             (Some(data), _) => {
-                let dataString = String::from_utf8(data.clone()).unwrap();
-                //let dataString = serde_json::to_string(&data).unwrap();
-                info!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> {}", dataString);
+                let local_cache = String::from_utf8(data.clone()).unwrap();
+                info!("sending local cache to management service {}", local_cache);
                 self.dispatch_http_call(
-            "management-service",
-            vec![
-                (":method", "POST"),
-                (":path", "/cache"),
-                (":authority", "management-service"),
-                ("Content-Type", "application/json"),
-            ],
-            Some(dataString.as_bytes()),
-            vec![],
-            Duration::from_secs(5),
-        )
-        .map_err(|e| {
-            // HTTP call failed. Reset to an
-            // initialisation tick for a quick retry.
-            self.set_tick_period(INITIALISATION_TICK);
+                    "management-service",
+                    vec![
+                        (":method", "POST"),
+                        (":path", "/cache"),
+                        (":authority", "management-service"),
+                        ("Content-Type", "application/json"),
+                        ("x-powered-by", POWERED_BY),
+                    ],
+                    Some(local_cache.as_bytes()),
+                    vec![],
+                    Duration::from_secs(5),
+                )
+                .map_err(|e| {
+                    // HTTP call failed. Reset to an
+                    // initialisation tick for a quick retry.
+                    self.set_tick_period(INITIALISATION_TICK);
 
-            warn!("Failed calling cache service: {:?}", e)
-        });
+                    warn!("Failed calling management service: {:?}", e)
+                })
+                .unwrap();
             }
         }
-
-        // let sampleBody: Token = Token {
-        //     token: "12345".to_string(),
-        //     path: "/foo".to_string(),
-        // };
-        // //let sampleBodySerilized = bincode::serialize(&sampleBody).unwrap();
-        // let serlizedString = serde_json::to_string(&sampleBody).unwrap();
-        // // Dispatch an async HTTP call to the configured cluster.
-        // //info!(">>>>>>>>>> XXXXXXXXXXX context id: {:?}", &self.context_id);
-        // self.dispatch_http_call(
-        //     "management-service",
-        //     vec![
-        //         (":method", "POST"),
-        //         (":path", "/auth"),
-        //         (":authority", "management-service"),
-        //         ("Content-Type", "application/json"),
-        //     ],
-        //     Some(serlizedString.as_bytes()),
-        //     vec![],
-        //     Duration::from_secs(5),
-        // )
-        // .map_err(|e| {
-        //     // HTTP call failed. Reset to an
-        //     // initialisation tick for a quick retry.
-        //     self.set_tick_period(INITIALISATION_TICK);
-
-        //     warn!("Failed calling cache service: {:?}", e)
-        // });
-        //})
-        //});
     }
 }
 
@@ -208,13 +175,12 @@ impl Context for SingletonService {
         let body = match self.get_http_call_response_body(0, body_size) {
             Some(body) => body,
             None => {
-                warn!("cache service returned empty body");
-
+                warn!("management service returned empty body");
                 return;
             }
         };
 
-        // Store the body in the shared cache.
+        // Update the local cache with the new version received
         match self.set_shared_data(CACHE_KEY, Some(&body), None) {
             Ok(()) => debug!(
                 "cache update successful: {}",
@@ -230,6 +196,3 @@ impl Context for SingletonService {
         }
     }
 }
-
-// =============================================
-
