@@ -2,13 +2,13 @@
 <br />
 <p align="center">
   <a href="https://github.com/github_username/repo">
-    <img src="assets/images/logo.png" alt="Logo" width="80" height="80">
+    <img src="img/cover.jpg" alt="Logo" width="800" height="250">
   </a>
 
-  <h3 align="center">Commhawk</h3>
+  <h3 align="center">Envoy proxy authorization cache</h3>
 
   <p align="center">
-   🛰 Envoy proxy authorization cache🛰️
+   🛰 A POC to demonstrate possibility of implementing a local cache🛰️
     <br />
     <a href="#"><strong>Explore the docs »</strong></a>
     <br />
@@ -27,12 +27,11 @@
 ## Table of Contents
 
 * [About the Project](#about-the-project)
-  * [Built With](#built-with)
 * [Getting Started](#getting-started)
   * [Prerequisites](#prerequisites)
   * [Installation](#installation)
-* [Roadmap](#roadmap)
-* [Contributing](#contributing)
+* [Basic overview](#Basic-overview)
+* [Example demonstrations](#Example-demonstrations)
 * [License](#license)
 * [Contact](#contact)
 * [Acknowledgements](#acknowledgements)
@@ -77,19 +76,26 @@ docker-compose up
 
 ## Basic overview
 
-This simple POC comprises of 4 main components. We are using 2 instances of envoy proxy as edge proxies with a custom HTTP filter and a singleton service built using WASM Rust SDK, a backend service with 3 endpoints named `/foo`, `/bar` and `/baz` and a management service that holds the global rules for authorization.
+This simple POC comprises of 3 main components.
+* 2 instances of envoy proxy as edge proxies with a custom HTTP filter and a singleton service built using WASM Rust SDK
+* Backend service with 3 endpoints named `/foo`, `/bar` and `/baz`. (`/foo` and `/bar` are cacheable resources while `/baz` is not cacheable)
+* Management service that holds the global rules for authorization.
 
 The main intention of the POC is to demonstrate the capability of using a WASM HTTP filter and a singleton service to implement a local authorization cache in envoy that is periodically synced with a global management service. The following factors are considered when implementing the POC.
 
 * A global level storage to store cache inside envoy where the cache is accessible from all the worker threads. Envoy has this support with their shared data feature. 
-* A singleton service that periodically sends the local cache to a management service and then updates the local cache based on the response from the management service.
+* A singleton service that periodically sends the local cache to a management service and then updates the local cache based on the response from the management service. Envoy supports singleton as a boostrap extension.
 * A HTTP filter that is capabale of intercepting requests and performing authorization based on a local cache. If not found in local cache sends an HTTP call to the management service. HTTP filter should be able to update the cache when requests pass through the filter. Also the HTTP filter should be able to add response headers like rate limit headers. 
 
-#### All these features are currently supported with envoy. But sending a HTTP request from a singleton service is currently broken for all the release versions of envoy. But the issue is fixed in the main and in the next release of envoy (1.18), this will be fixed. So for this POC, we are using the `envoyproxy/envoy-dev:latest` image. 
+#### All these features are currently supported with envoy. But sending a HTTP request from a singleton service is currently broken for all the release versions of envoy. But the issue is fixed in the main and in the next release of envoy (1.18), this will be fixed. So for this POC, we are using the `envoyproxy/envoy-dev:latest` image.
+
+
 
 
 <!-- ROADMAP -->
-## Roadmap
+## Example demonstrations
+
+This
 
 See the [open issues](https://github.com/github_username/repo/issues) for a list of proposed features (and known issues).
 
@@ -152,4 +158,4 @@ Sri Lanka
 [license-url]: https://github.com/othneildrew/Best-README-Template/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=flat-square&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/othneildrew
-[product-screenshot]: assets/images/cover.png
+[product-screenshot]: img/overview.png
