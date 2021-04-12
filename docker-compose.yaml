@@ -1,6 +1,6 @@
 version: '3.7'
 services:
-  proxy:
+  proxy_1:
     build:
       context: ./envoy
       dockerfile: Dockerfile
@@ -11,6 +11,18 @@ services:
     ports:
       - "9095:9095"
       - "9000:9000"
+  
+  proxy_2:
+    build:
+      context: ./envoy
+      dockerfile: Dockerfile
+    depends_on:
+      - backend_service
+    networks:
+      - envoymesh
+    ports:
+      - "9096:9095"
+      - "9001:9000"
     # volumes:
     #   - ".envoy/cache_filter.wasm:/etc/envoy/cache_filter.wasm" 
 
@@ -28,7 +40,7 @@ services:
     networks:
       - envoymesh
     ports: 
-      - "9096:8000"
+      - "9098:8000"
 
 networks:
   envoymesh: {}

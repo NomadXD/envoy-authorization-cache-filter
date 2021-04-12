@@ -2,7 +2,6 @@ const express = require("express")
 const app = express()
 const bodyParser = require("body-parser");
 const jwt = require('jsonwebtoken')
-const CronJob = require("cron").CronJob;
 
 
 
@@ -22,15 +21,6 @@ global.nonCacheableRules = {
     "baz_quota": 10,
     "baz_used": 0
 }
-
-const windowSlide = new CronJob('0 */2 * * * *', function() {
-    console.log(">>>>>>>>>>>>>>>>>>>>>>>>> 2 mins")
-	cacheableRules.foo_used = 0
-    cacheableRules.bar_used = 0
-    nonCacheableRules.baz_used = 0
-});
-
-windowSlide.start()
 
 app.post("/auth", (req,res)=>{
     console.log("auth request received by the management service")
@@ -74,12 +64,13 @@ app.post("/cache", (req, res) => {
 
     // If no change between local cache and global rules
     if(cacheableRules.foo_used != cacheUpdate.foo_used){
-        if(cacheableRules.foo_quota <= cacheUpdate.foo_used){
+        if(cacheableRules.foo_quota == cacheUpdate.foo_used){
             console.log("/foo global limit reached")
             cacheableRules.foo_used = cacheableRules.foo_quota
         }else{
-            console.log("/foo global limit updated")
-            cacheableRules.foo_used = cacheUpdate.foo_used
+            if(cacheableRules.foo_used < cacheUpdate.foo_used){
+                cacheableRules.foo_used = cacheUpdate.foo_used
+            }
         }
     }else{
         console.log("/foo local cache no changes")
