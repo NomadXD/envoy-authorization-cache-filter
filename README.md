@@ -62,8 +62,8 @@ To get a local copy up and running follow these simple steps.
  
 1. Clone the repo 
 ```sh
-git clone https://github.com/NomadXD/commhawk.git
-cd commhawk
+git clone https://github.com/NomadXD/envoy-authorization-cache-filter.git
+cd envoy-authorization-cache-filter
 ```
 2. Build the project with docker-compose
 ```sh
@@ -95,22 +95,43 @@ The main intention of the POC is to demonstrate the capability of using a WASM H
 <!-- ROADMAP -->
 ## Example demonstrations
 
-This
+This sections demonstrates few examples of the features that are implemented in the POC. 
 
-See the [open issues](https://github.com/github_username/repo/issues) for a list of proposed features (and known issues).
+### Periodical cache update
+
+1. Start the service using docker-compose
+
+    `docker-compose up`
+
+2. Get a JWT token using the token endpoint
+
+    `curl -X GET localhost:9098/token`
+
+    Note the token endpoint is accessed directly from the service without proxying through envoy.
+
+3. Send 2 subsequent requests to `/foo` endpoint and see the logs for cache update process. By default cache update duration is `20s` and if backend connection or anything is wrong it will do a retry every `10s`. Cache update duration is configurable using the envoy.yaml but retry time is hardcoded for now.
+
+    `curl -X GET localhost:9095/foo -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.YXV0aC10b2tlbg.9SMiDKOqXy9R28XBelHlMAAO7K1SRXBwD9s3TpKdO0Q"`
+
+    See the logs after sending the request. In the first cache update happens after the request only 1 of the local cache's will contain `foo_used: 2`, but in the next cache update both the local caches, will contain `foo_used: 2` as the local caches are resolved in the management service and envoy is updated with the newest version of the cache using the response of the cache update request. 
+
+### Exceeding the global limit
+
+One issue of having a local cache is the accuracy of the authorization process but it comes with the benefit of less latencies. All the resources have a quota of 10 requests. So let's try to exploit the local cache and send more than 10 requests.
+
+1. Start the service using docker-compose
+
+    `docker-compose up`
+
+2. Get a JWT token using the token endpoint
+
+    `curl -X GET localhost:9098/token`
+
+    Note the token endpoint is accessed directly from the service without proxying through envoy.
+
+3. Send requests continously to one proxy untill you get a `429 Service quota exceeded` message and instantly send continous requests to the other edge proxy (this has to happen before the cache update. Default duration is 20s , so start the test right after a cache update.). You will be able to get successfull responses untill the next cache update or until the local limit runs out.   
 
 
-
-<!-- CONTRIBUTING -->
-## Contributing
-
-Contributions are what make the open source community such an amazing place to be learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 
 
@@ -121,41 +142,11 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 
 
-<!-- CONTACT -->
-## Contact
-
-Lahiru Udayanga - lahiru97udayanga@gmail.com
-<!-- ACKNOWLEDGEMENTS -->
-## Acknowledgements
-
-* Dr. Dulani Meedeniya
-Senior Lecturer,
-Department of Computer Science and Engineering,
-University of Moratuwa,
-Sri Lanka
-* Mr. Sachin Kahawala,
-Mentor,
-Department of Computer Science and Engineering,
-University of Moratuwa,
-Sri Lanka
 
 
 
 
 
 
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/othneildrew/Best-README-Template.svg?style=flat-square
-[contributors-url]: https://github.com/othneildrew/Best-README-Template/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/othneildrew/Best-README-Template.svg?style=flat-square
-[forks-url]: https://github.com/othneildrew/Best-README-Template/network/members
-[stars-shield]: https://img.shields.io/github/stars/othneildrew/Best-README-Template.svg?style=flat-square
-[stars-url]: https://github.com/othneildrew/Best-README-Template/stargazers
-[issues-shield]: https://img.shields.io/github/issues/othneildrew/Best-README-Template.svg?style=flat-square
-[issues-url]: https://github.com/othneildrew/Best-README-Template/issues
-[license-shield]: https://img.shields.io/github/license/othneildrew/Best-README-Template.svg?style=flat-square
-[license-url]: https://github.com/othneildrew/Best-README-Template/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=flat-square&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/othneildrew
+
 [product-screenshot]: img/overview.png

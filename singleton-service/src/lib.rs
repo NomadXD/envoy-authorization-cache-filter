@@ -35,7 +35,7 @@ impl Default for FilterConfig {
         FilterConfig {
             management_service_cluster: "management-service".to_owned(),
             cache_service_path: "/cache".to_owned(),
-            cache_update_duration: Duration::from_secs(360),
+            cache_update_duration: Duration::from_secs(20),
             cache_service_authority: "cache_service".to_owned(),
         }
     }
