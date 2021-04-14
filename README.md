@@ -33,9 +33,6 @@
 * [Basic overview](#Basic-overview)
 * [Example demonstrations](#Example-demonstrations)
 * [License](#license)
-* [Contact](#contact)
-* [Acknowledgements](#acknowledgements)
-
 
 
 <!-- ABOUT THE PROJECT -->
@@ -78,7 +75,7 @@ docker-compose up
 
 1. Go to the respective directory (singleton-service or cache-filter)
 
-2. Execute `make build from the root of that directory`. See build prerequisites above to see whether everything is installed.
+2. Execute `make build` from the root of that directory. See build prerequisites above to see whether everything is installed.
 
 3. The WASM modules will be there in the envoy folder after build process is successfully completed.
 
@@ -191,7 +188,7 @@ This sections demonstrates few examples of the features that are implemented in 
 
     `curl -X GET localhost:9095/foo -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.YXV0aC10b2tlbg.9SMiDKOqXy9R28XBelHlMAAO7K1SRXBwD9s3TpKdO0Q"`
 
-    See the logs after sending the request. In the first cache update happens after the 2 requests, only 1 of the local cache's will contain `foo_used: 2`. This means only the proxy that handled those 2 requests know about the requests. After receiving a cache update, the management service will update the global state and sends back the updated snapshot back to proxies. **If the cache update request of the proxy that did not intercept the 2 requests take place first, then it will not know about the 2 requests beacause the new cache update will not contain those information. But in the next cache update both the local caches, will contain `foo_used: 2` as the global state contain those 2 requests from the cache update of the other proxy that intercepted the requests. So we cannot say a certain cache update will contain all the global state cache information at a particular time. But here since only 2 proxies are there, it is guranteed that after 2 cache updates the information will be there. For the simplicity the whole cache snapshot is sent here as the cache update. But in a more production level scenario we should calculate deltas and send only the changes.  
+    See the logs after sending the request. In the first cache update happens after the 2 requests, only 1 of the local cache's will contain `foo_used: 2`. This means only the proxy that handled those 2 requests know about the requests. After receiving a cache update, the management service will update the global state and sends back the updated snapshot back to proxies. **If the cache update request of the proxy that did not intercept the 2 requests take place first, then it will not know about the 2 requests beacause the new cache update will not contain those information. But in the next cache update both the local caches, will contain `foo_used: 2` as the global state contain those 2 requests from the cache update of the other proxy that intercepted the requests. So we cannot say a certain cache update will contain all the global state cache information at a particular time. But here since only 2 proxies are there, it is guranteed that after 2 cache updates the information will be there. For the simplicity the whole cache snapshot is sent here as the cache update. But in a more production level scenario we should calculate deltas and send only the changes.**  
 
 
 
