@@ -103,7 +103,7 @@ impl RootContext for SingletonService {
         // initial_tick_duration -> cache_update_duration
         // cache_update_duration -> cache_update_duration
         // Also when the cache_update request fails, set_tick_period to initial_tick_duration
-        self.set_tick_period(Duration::from_secs(20));
+        self.set_tick_period(self.config.cache_update_duration);
 
         match self.get_shared_data(CACHE_KEY) {
             // No local cache. Send a GET to pull cacheable rules
@@ -113,8 +113,8 @@ impl RootContext for SingletonService {
                     "management-service",
                     vec![
                         (":method", "GET"),
-                        (":path", "/cache"),
-                        (":authority", "management-service"),
+                        (":path", self.config.cache_service_path.as_str()),
+                        (":authority", self.config.cache_service_authority.as_str()),
                         ("Content-Type", "application/json"),
                         ("x-powered-by", POWERED_BY),
                     ],

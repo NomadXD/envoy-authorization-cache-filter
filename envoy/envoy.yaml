@@ -15,7 +15,12 @@ bootstrap_extensions:
       configuration: 
         "@type": type.googleapis.com/google.protobuf.StringValue
         value: |
-          {}
+          {
+            "management_service_cluster": "management-service",
+            "cache_service_path": "/cache",
+            "cache_update_duration": "20s",
+            "cache_service_authority": "cache-filter"
+          }
       vm_config:
         runtime: "envoy.wasm.runtime.v8"
         vm_id: "my_vm_id"

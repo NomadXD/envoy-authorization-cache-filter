@@ -209,11 +209,6 @@ impl Context for CacheFilter {
                 data
             );
             if data.get("status") != None {
-                //info!("Error fetching token: {}, {}", data.get("error").unwrap(), data.get("error_description").unwrap());
-                //return
-                // if(data.get("status").unwrap() == 200){
-                //     self.resume_http_request();
-                // }else
                 let status = data.get("status").unwrap().as_u64().unwrap();
                 if status == 200 {
                     self.resume_http_request();
@@ -243,19 +238,6 @@ impl Context for CacheFilter {
                     Some(b"Service Unavailable\n"),
                 )
             }
-
-            // if data.get("id_token") != None {
-            //     info!("id_token found. Setting cookie and redirecting...");
-            //     self.send_http_response(
-            //         302,
-            //         vec![
-            //             ("Set-Cookie", format!("oidcToken={};Max-Age={}", data.get("id_token").unwrap(), data.get("expires_in").unwrap()).as_str()),
-            //             ("Location", format!("http://{}{}", host, path).as_str()),
-            //         ],
-            //         Some(b""),
-            //     );
-            //     return
-            // }
         } else {
             self.send_http_response(
                 500,
@@ -263,20 +245,10 @@ impl Context for CacheFilter {
                 Some(b"Service Unavailable\n"),
             )
         }
-
-        //self.resume_http_request()
     }
 }
 
 impl CacheFilter {
-    // fn parse_headers(&self, headers: Vec<(String, String)>) -> String {
-    //     for
-    // }
-
-    // fn print_cache_key(&self, key: &[u8]) {
-    //     info!("Cache key: {}", String::from_utf8(key.clone()).unwrap())
-    // }
-
     fn get_cache_record(&self, path: String) -> Option<CacheRecord> {
         if path == "/foo" || path == "/bar" {
             match self.get_shared_data(CACHE_KEY) {
