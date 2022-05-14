@@ -1,4 +1,4 @@
-FROM envoyproxy/envoy-dev:latest
+FROM envoyproxy/envoy:v1.18.3
 
 COPY ./envoy.yaml /etc/envoy/envoy.yaml
 COPY ./cache_filter.wasm /usr/local/bin/cache_filter.wasm
